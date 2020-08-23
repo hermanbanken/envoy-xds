@@ -14,6 +14,7 @@
 package main
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/golang/protobuf/ptypes"
@@ -25,12 +26,13 @@ import (
 	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	hcm "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
-	"github.com/envoyproxy/go-control-plane/pkg/cache/v3"
-	"github.com/envoyproxy/go-control-plane/pkg/resource/v3"
+	cache "github.com/envoyproxy/go-control-plane/pkg/cache/v3"
+	resource "github.com/envoyproxy/go-control-plane/pkg/resource/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/wellknown"
 )
 
 const (
+	// ClusterName s
 	ClusterName  = "example_proxy_cluster"
 	RouteName    = "local_route"
 	ListenerName = "listener_0"
@@ -39,7 +41,7 @@ const (
 	UpstreamPort = 80
 )
 
-func makeCluster(clusterName string) *cluster.Cluster {
+func makeFakeCluster(clusterName string) *cluster.Cluster {
 	return &cluster.Cluster{
 		Name:                 clusterName,
 		ConnectTimeout:       ptypes.DurationProto(5 * time.Second),
@@ -163,14 +165,30 @@ func makeConfigSource() *core.ConfigSource {
 	return source
 }
 
-func GenerateSnapshot() cache.Snapshot {
+func generateSnapshot(version int, services map[string]*EnvoyService) cache.Snapshot {
+	// for each service create the endpoints
+	edsEndpoints := make([]types.Resource, 0)
+	edsClusters := make([]types.Resource, 0)
+	for _, envoyService := range services {
+		edsEndpoints = append(edsEndpoints, MakeEndpointsForService(envoyService))
+		edsClusters = append(edsClusters, MakeClusterForService(envoyService))
+	}
+
+	if len(services) < 1 {
+		panic("Unsupported: use a non-zero list of services: this dummy repo picks the first!")
+	}
+	var firstCluster string
+	for _, service := range services {
+		firstCluster = service.name
+		break
+	}
+
 	return cache.NewSnapshot(
-		"1",
-		[]types.Resource{}, // endpoints
-		[]types.Resource{makeCluster(ClusterName)},
-		[]types.Resource{makeRoute(RouteName, ClusterName)},
-		[]types.Resource{makeHTTPListener(ListenerName, RouteName)},
+		fmt.Sprintf("%v.0", version),
+		edsEndpoints, // endpoints
+		edsClusters,  // clusters
+		[]types.Resource{makeRoute(RouteName, firstCluster)},        // routes
+		[]types.Resource{makeHTTPListener(ListenerName, RouteName)}, // listeners
 		[]types.Resource{}, // runtimes
-		[]types.Resource{}, // secrets
 	)
 }

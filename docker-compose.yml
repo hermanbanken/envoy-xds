@@ -1,0 +1,21 @@
+version: "2.4"
+services:
+  xds:
+    build:
+      context: ./xds
+      dockerfile: ../Dockerfile
+    ports:
+      - "18000"
+      - "19000:19000"
+  envoy:
+    image: envoyproxy/envoy
+    command: ["/usr/local/bin/envoy", "-c /data/bootstrap-xdsv3.yaml", "--drain-time-s 1", "-l debug"]
+    volumes:
+      - "./envoy-data:/data"
+    ports:
+      - "8000:80"
+  target:
+    image: citizenstig/httpbin
+    scale: 3
+    ports:
+      - "80"
