@@ -5,8 +5,8 @@ services:
       context: ./xds
       dockerfile: ../Dockerfile
     ports:
-      - "18000"
-      - "19000:19000"
+      - "1800"
+      - "9901:9901"
   envoy:
     image: envoyproxy/envoy
     command: ["/usr/local/bin/envoy", "-c /data/bootstrap-xdsv3.yaml", "--drain-time-s 1", "-l debug"]
