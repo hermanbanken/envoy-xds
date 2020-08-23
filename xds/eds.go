@@ -70,7 +70,9 @@ func MakeClusterForService(service *EnvoyService) *cluster.Cluster {
 		ConnectTimeout:       ptypes.DurationProto(5 * time.Second),
 		ClusterDiscoveryType: &cluster.Cluster_Type{Type: cluster.Cluster_EDS},
 		LbPolicy:             cluster.Cluster_ROUND_ROBIN,
-		EdsClusterConfig:     &cluster.Cluster_EdsClusterConfig{},
+		EdsClusterConfig: &cluster.Cluster_EdsClusterConfig{
+			EdsConfig: makeConfigSource(),
+		},
 	}
 }
 

@@ -16,8 +16,11 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
+	"net"
 	"os"
+	"time"
 
 	cachev3 "github.com/envoyproxy/go-control-plane/pkg/cache/v3"
 	serverv3 "github.com/envoyproxy/go-control-plane/pkg/server/v3"
@@ -101,17 +104,48 @@ func makeSnapshotChannel() chan cachev3.Snapshot {
 // https://github.com/envoyproxy/go-control-plane/blob/master/examples/dyplomat/main.go
 //
 func MonitorServices(handler func(map[string]*EnvoyService)) {
-	services := map[string]*EnvoyService{
-		"service1": {
-			name: "service1",
-			port: 8000,
-			endpoints: []EnvoyServiceEndpoint{
-				{"target-1", map[string]string{"host": "target-1", "group": "a"}},
-				{"target-2", map[string]string{"host": "target-2", "group": "a"}},
-				{"target-3", map[string]string{"host": "target-3", "group": "b"}},
-			},
+	// almost static, but you could do this based on some external system/event
+	go func() {
+		for {
+			targets, err := lookup("target")
+			if err != nil {
+				log.Println(err)
+			}
+			endpoints := []EnvoyServiceEndpoint{}
+			groups := []string{"a", "b"}
+			for i, target := range targets {
+				endpoints = append(endpoints, EnvoyServiceEndpoint{
+					Address:  target,
+					Metadata: map[string]string{"host": fmt.Sprintf("target-", i+1), "group": groups[i%2]},
+				})
+			}
+			services := map[string]*EnvoyService{
+				"service1": {
+					name:      "service1",
+					port:      8000,
+					endpoints: endpoints,
+				},
+			}
+			handler(services)
+			time.Sleep(5 * time.Second)
+		}
+	}()
+}
+
+func lookup(addr string) ([]string, error) {
+	dns := os.Getenv("DNS")
+	if dns == "" {
+		return net.DefaultResolver.LookupHost(context.Background(), addr)
+	}
+	r := &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			d := net.Dialer{
+				Timeout: time.Millisecond * time.Duration(10000),
+			}
+			return d.DialContext(ctx, "udp", dns)
 		},
 	}
-	// just once, but you could do this on some external event
-	handler(services)
+	return r.LookupHost(context.Background(), addr)
+
 }
