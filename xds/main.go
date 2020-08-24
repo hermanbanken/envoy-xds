@@ -20,6 +20,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"sort"
 	"time"
 
 	cachev3 "github.com/envoyproxy/go-control-plane/pkg/cache/v3"
@@ -108,21 +109,27 @@ func MonitorServices(handler func(map[string]*EnvoyService)) {
 	go func() {
 		for {
 			targets, err := lookup("target")
+			sort.Sort(sort.StringSlice(targets))
 			if err != nil {
-				log.Println(err)
+				log.Println("No backend-servers due to DNS error", err)
+			} else if len(targets) == 0 {
+				log.Println("No backend-servers due to DNS result being empty")
+			} else {
+				log.Println("Backend-servers", targets)
 			}
+
 			endpoints := []EnvoyServiceEndpoint{}
 			groups := []string{"a", "b"}
 			for i, target := range targets {
 				endpoints = append(endpoints, EnvoyServiceEndpoint{
 					Address:  target,
-					Metadata: map[string]string{"host": fmt.Sprintf("target-", i+1), "group": groups[i%2]},
+					Metadata: map[string]string{"slice": fmt.Sprintf("target-%d", i+1), "group": groups[i%2]},
 				})
 			}
 			services := map[string]*EnvoyService{
 				"service1": {
 					name:      "service1",
-					port:      8000,
+					port:      80,
 					endpoints: endpoints,
 				},
 			}

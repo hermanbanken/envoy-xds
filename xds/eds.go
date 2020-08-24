@@ -53,7 +53,7 @@ func MakeEndpointsForService(service *EnvoyService) *endpoint.ClusterLoadAssignm
 					// Allow filtering via metadata
 					Metadata: &core.Metadata{
 						FilterMetadata: map[string]*_struct.Struct{
-							"demo.example.org": mapToStruct(serviceEndpoint.Metadata),
+							"envoy.lb": mapToStruct(serviceEndpoint.Metadata),
 						},
 					},
 				}},
@@ -72,6 +72,15 @@ func MakeClusterForService(service *EnvoyService) *cluster.Cluster {
 		LbPolicy:             cluster.Cluster_ROUND_ROBIN,
 		EdsClusterConfig: &cluster.Cluster_EdsClusterConfig{
 			EdsConfig: makeConfigSource(),
+		},
+		// LbSubsetConfig is how we can route traffic to specific backends
+		// see https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_balancing/subsets
+		LbSubsetConfig: &cluster.Cluster_LbSubsetConfig{
+			FallbackPolicy: cluster.Cluster_LbSubsetConfig_ANY_ENDPOINT,
+			DefaultSubset:  mapToStruct(map[string]string{"slice": "default"}),
+			SubsetSelectors: []*cluster.Cluster_LbSubsetConfig_LbSubsetSelector{
+				{Keys: []string{"slice"}, FallbackPolicy: cluster.Cluster_LbSubsetConfig_LbSubsetSelector_NO_FALLBACK},
+			},
 		},
 	}
 }

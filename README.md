@@ -20,3 +20,5 @@ This repository shows:
 1. https://github.com/envoyproxy/go-control-plane/tree/master/internal/example/
 2. https://github.com/envoyproxy/go-control-plane/tree/master/examples/dyplomat/
 3. https://docs.solo.io/gloo/latest/guides/dev/writing-upstream-plugins/
+4. [WebAssembly Gloo](https://docs.solo.io/gloo/latest/guides/dev/writing-upstream-plugins/)
+5. https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_balancing/subsets

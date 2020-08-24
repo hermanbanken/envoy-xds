@@ -6,7 +6,6 @@ services:
       dockerfile: ../Dockerfile
     ports:
       - "1800"
-      - "9901:9901"
   envoy:
     image: envoyproxy/envoy:v1.14.4
     command: ["/usr/local/bin/envoy", "-c /data/bootstrap-xdsv3.yaml", "--drain-time-s 1", "-l debug"]
@@ -14,8 +13,9 @@ services:
       - "./envoy-data:/data"
     ports:
       - "8000:80"
+      - "9901:9901"
   target:
-    image: citizenstig/httpbin
+    image: mendhak/http-https-echo
     scale: 3
     ports:
       - "80"

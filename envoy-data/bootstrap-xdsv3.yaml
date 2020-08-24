@@ -1,9 +1,10 @@
 # Base config for a split xDS management server on 1800, admin port on 19000
 admin:
-  access_log_path: /dev/null
+  # access_log_path: /dev/null
+  access_log_path: /dev/stderr
   address:
     socket_address:
-      address: 127.0.0.1
+      address: 0.0.0.0
       port_value: 9901
 dynamic_resources:
   cds_config:

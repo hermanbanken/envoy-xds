@@ -15,15 +15,13 @@ package main
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/golang/protobuf/ptypes"
 
-	cluster "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
-	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
 	listener "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	route "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
+	header_to_metadata "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/header_to_metadata/v3"
 	hcm "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
 	cache "github.com/envoyproxy/go-control-plane/pkg/cache/v3"
@@ -31,52 +29,7 @@ import (
 	"github.com/envoyproxy/go-control-plane/pkg/wellknown"
 )
 
-const (
-	// ClusterName s
-	ClusterName  = "example_proxy_cluster"
-	RouteName    = "local_route"
-	ListenerName = "listener_0"
-	ListenerPort = 10000
-	UpstreamHost = "www.envoyproxy.io"
-	UpstreamPort = 80
-)
-
-func makeFakeCluster(clusterName string) *cluster.Cluster {
-	return &cluster.Cluster{
-		Name:                 clusterName,
-		ConnectTimeout:       ptypes.DurationProto(5 * time.Second),
-		ClusterDiscoveryType: &cluster.Cluster_Type{Type: cluster.Cluster_LOGICAL_DNS},
-		LbPolicy:             cluster.Cluster_ROUND_ROBIN,
-		LoadAssignment:       makeEndpoint(clusterName),
-	}
-}
-
-func makeEndpoint(clusterName string) *endpoint.ClusterLoadAssignment {
-	return &endpoint.ClusterLoadAssignment{
-		ClusterName: clusterName,
-		Endpoints: []*endpoint.LocalityLbEndpoints{{
-			LbEndpoints: []*endpoint.LbEndpoint{{
-				HostIdentifier: &endpoint.LbEndpoint_Endpoint{
-					Endpoint: &endpoint.Endpoint{
-						Address: &core.Address{
-							Address: &core.Address_SocketAddress{
-								SocketAddress: &core.SocketAddress{
-									Protocol: core.SocketAddress_TCP,
-									Address:  UpstreamHost,
-									PortSpecifier: &core.SocketAddress_PortValue{
-										PortValue: UpstreamPort,
-									},
-								},
-							},
-						},
-					},
-				},
-			}},
-		}},
-	}
-}
-
-func makeRoute(routeName string, clusterName string) *route.RouteConfiguration {
+func makeRoute(routeName string, clusterName string, hostRewriteLiteral string) *route.RouteConfiguration {
 	return &route.RouteConfiguration{
 		Name: routeName,
 		VirtualHosts: []*route.VirtualHost{{
@@ -94,7 +47,7 @@ func makeRoute(routeName string, clusterName string) *route.RouteConfiguration {
 							Cluster: clusterName,
 						},
 						HostRewriteSpecifier: &route.RouteAction_HostRewriteLiteral{
-							HostRewriteLiteral: UpstreamHost,
+							HostRewriteLiteral: hostRewriteLiteral,
 						},
 					},
 				},
@@ -103,7 +56,28 @@ func makeRoute(routeName string, clusterName string) *route.RouteConfiguration {
 	}
 }
 
-func makeHTTPListener(listenerName string, route string) *listener.Listener {
+func makeHTTPListener(listenerName string, listenerPort uint32, route string) *listener.Listener {
+	// HTTP header_to_metadata.Config must be converted to Any into HttpFilter_TypedConfig.TypedConfig
+	typedConfig := &header_to_metadata.Config{
+		// see https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/header_to_metadata_filter
+		RequestRules: []*header_to_metadata.Config_Rule{{
+			Header: "x-slice",
+			OnHeaderPresent: &header_to_metadata.Config_KeyValuePair{
+				Key:               "slice",
+				MetadataNamespace: "envoy.lb",
+				Type:              header_to_metadata.Config_STRING,
+			},
+			Remove: false,
+		}},
+	}
+	if err := typedConfig.Validate(); err != nil {
+		panic(err)
+	}
+	config, err := ptypes.MarshalAny(typedConfig)
+	if err != nil {
+		panic(err)
+	}
+
 	// HTTP filter configuration
 	manager := &hcm.HttpConnectionManager{
 		CodecType:  hcm.HttpConnectionManager_AUTO,
@@ -115,6 +89,9 @@ func makeHTTPListener(listenerName string, route string) *listener.Listener {
 			},
 		},
 		HttpFilters: []*hcm.HttpFilter{{
+			Name:       "envoy.filters.http.header_to_metadata",
+			ConfigType: &hcm.HttpFilter_TypedConfig{TypedConfig: config},
+		}, {
 			Name: wellknown.Router,
 		}},
 	}
@@ -131,7 +108,7 @@ func makeHTTPListener(listenerName string, route string) *listener.Listener {
 					Protocol: core.SocketAddress_TCP,
 					Address:  "0.0.0.0",
 					PortSpecifier: &core.SocketAddress_PortValue{
-						PortValue: ListenerPort,
+						PortValue: listenerPort,
 					},
 				},
 			},
@@ -187,8 +164,8 @@ func generateSnapshot(version int, services map[string]*EnvoyService) cache.Snap
 		fmt.Sprintf("%v.0", version),
 		edsEndpoints, // endpoints
 		edsClusters,  // clusters
-		[]types.Resource{makeRoute(RouteName, firstCluster)},        // routes
-		[]types.Resource{makeHTTPListener(ListenerName, RouteName)}, // listeners
+		[]types.Resource{makeRoute("service_route", firstCluster, "target")},  // routes
+		[]types.Resource{makeHTTPListener("listener_0", 80, "service_route")}, // listeners
 		[]types.Resource{}, // runtimes
 	)
 }
