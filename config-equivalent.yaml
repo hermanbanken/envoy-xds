@@ -1,0 +1,73 @@
+# Static equivalent configuration of this xDS repository.
+# Requires Envoy >= 1.14.
+# This shows that xDS is not necessarily simpler (at least it is more flexible).
+# Validate:
+# $ docker run -v $PWD:/data envoyproxy/envoy /usr/local/bin/envoy -c /data/config-equivalent.yaml
+#
+# Docs: https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_balancing/subsets
+# Other examples: https://www.envoyproxy.io/docs/envoy/latest/configuration/overview/examples
+static_resources:
+  listeners:
+    - name: listener0
+      address: { socket_address: { address: "0.0.0.0", port_value: 80 } }
+      filter_chains:
+      - filters:
+        - name: envoy.filters.network.http_connection_manager
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+            codec_type: AUTO
+            stat_prefix: ingress_http
+            http_filters:
+            - name: envoy.filters.http.header_to_metadata
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.http.header_to_metadata.v3.Config
+                request_rules:
+                - header: x-slice
+                  on_header_present:
+                    metadata_namespace: envoy.lb
+                    key: slice
+            - name: envoy.filters.http.router
+            route_config:
+              name: local_route
+              virtual_hosts:
+              - name: local_service
+                domains: ["*"]
+                routes:
+                - match: { prefix: "/" }
+                  route: { cluster: target, host_rewrite_literal: target }
+  clusters:
+  - connect_timeout: 1s
+    name: target
+    type: strict_dns
+    http2_protocol_options: {}
+    lb_subset_config:
+      fallback_policy: ANY_ENDPOINT
+      default_subset: { "slice": "default" }
+      subset_selectors:
+        - keys: ["slice"]
+          fallback_policy: NO_FALLBACK
+    load_assignment:
+      cluster_name: target
+      endpoints:
+      - lb_endpoints:
+        - metadata:
+            filter_metadata: { "envoy.lb": { "slice": "target-1" } }
+          endpoint:
+            address:
+              socket_address:
+                address: target-1
+                port_value: 80
+        - metadata:
+            filter_metadata: { "envoy.lb": { "slice": "target-1" } }
+          endpoint:
+            address:
+              socket_address:
+                address: target-2
+                port_value: 80
+        - metadata:
+            filter_metadata: { "envoy.lb": { "slice": "target-1" } }
+          endpoint:
+            address:
+              socket_address:
+                address: target-3
+                port_value: 80
